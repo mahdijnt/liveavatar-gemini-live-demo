@@ -12,7 +12,7 @@
 
 import type WebSocket from "ws";
 import type { ServerMessage, TermCardProps, Turn } from "../../shared/messages";
-import { GptLiveBridge, type GptLiveEvents } from "./gptlive";
+import { GeminiLiveBridge, type GeminiLiveEvents } from "./geminilive";
 import { MediaServerLeg } from "./mediaServer";
 import { LESSON_WORDS, REVIEW_BREAK_PROMPT, SILENCE_CHECKIN } from "./prompts";
 import { dispatchToolCall } from "./tools";
@@ -66,8 +66,8 @@ const SILENCE_POLL_MS = 3_000;
 // it every poll tick past the threshold re-prods, which is nagging, not care.
 const CHECKIN_COOLDOWN_MS = 20_000;
 
-export class Session implements GptLiveEvents {
-  readonly bridge: GptLiveBridge;
+export class Session implements GeminiLiveEvents {
+  readonly bridge: GeminiLiveBridge;
   readonly media: MediaServerLeg;
 
   private frontend: WebSocket | null = null;
@@ -109,13 +109,13 @@ export class Session implements GptLiveEvents {
     private readonly onDead: (sessionId: string) => void,
   ) {
     this.media = new MediaServerLeg(mediaWsUrl, (msg) => this.log(msg));
-    this.bridge = new GptLiveBridge(this, (msg) => this.log(msg));
+    this.bridge = new GeminiLiveBridge(this, (msg) => this.log(msg));
   }
 
   /** Spawn both legs; whichever exits first ends the session. */
   start(): void {
     void this.runLeg("media server", () => this.media.run());
-    void this.runLeg("GPT-Live", async () => {
+    void this.runLeg("Gemini Live", async () => {
       if (!(await this.media.waitUntilReady(MEDIA_READY_TIMEOUT_MS))) {
         // Said out loud: without this the avatar simply never speaks while the
         // transcript keeps printing, and the only person who can't tell why is
@@ -171,7 +171,7 @@ export class Session implements GptLiveEvents {
   onReady(): void {
     this.ready = true;
     this.readyAt = Date.now();
-    this.log("GPT-Live ready");
+    this.log("Gemini Live ready");
     this.emit({ type: "ready" });
     this.silencePoll = setInterval(() => this.checkSilence(), SILENCE_POLL_MS);
   }

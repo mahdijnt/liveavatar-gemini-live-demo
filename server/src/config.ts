@@ -31,17 +31,11 @@ export const config = {
     avatarId: env("LIVEAVATAR_AVATAR_ID"),
   },
 
-  gptlive: {
-    apiKey: env("OPENAI_API_KEY"),
-    model: env("GPT_LIVE_MODEL", "gpt-live-1"),
-    voice: env("GPT_LIVE_VOICE", "marin"),
-    responsesModel: env("GPT_LIVE_RESPONSES_MODEL", "gpt-5.4-nano"),
-    /**
-     * Set GPT_LIVE_DEBUG=1 to log every upstream event (audio payloads
-     * elided). Loud — for answering "what did OpenAI actually send/reject",
-     * not for leaving on.
-     */
-    debug: Boolean(env("GPT_LIVE_DEBUG")),
+  gemini: {
+    apiKey: env("GEMINI_API_KEY"),
+    model: env("GEMINI_MODEL", "gemini-2.5-flash-native-audio-latest"),
+    voice: env("GEMINI_VOICE", "Aoede"),
+    debug: Boolean(env("GEMINI_DEBUG")),
   },
 };
 
@@ -53,7 +47,8 @@ export const config = {
 export function missingConfig(): string[] {
   const required: [string, string][] = [
     ["LIVEAVATAR_API_KEY", config.liveavatar.apiKey],
-    ["OPENAI_API_KEY", config.gptlive.apiKey],
+    ["GEMINI_API_KEY", config.gemini.apiKey],
   ];
   return required.filter(([, value]) => !value).map(([name]) => name);
 }
+

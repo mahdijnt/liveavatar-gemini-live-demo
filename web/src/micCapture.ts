@@ -16,26 +16,29 @@ class PCMDownsampler extends AudioWorkletProcessor {
     this.targetRate = (options.processorOptions && options.processorOptions.targetRate) || 24000;
     this.ratio = sampleRate / this.targetRate;
     this.pos = 0;
+    this.buf = [];
   }
   process(inputs) {
     const input = inputs[0];
     if (!input || !input[0]) return true;
     const ch = input[0];
-    const out = [];
     for (; this.pos < ch.length; this.pos += this.ratio) {
       const start = Math.floor(this.pos);
       const end = Math.min(ch.length, Math.ceil(this.pos + this.ratio));
       let sum = 0, cnt = 0;
       for (let j = start; j < end; j++) { sum += ch[j]; cnt++; }
-      out.push(cnt ? sum / cnt : (ch[start] || 0));
+      this.buf.push(cnt ? sum / cnt : (ch[start] || 0));
     }
     this.pos -= ch.length;
-    const pcm = new Int16Array(out.length);
-    for (let k = 0; k < out.length; k++) {
-      let s = Math.max(-1, Math.min(1, out[k]));
-      pcm[k] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    if (this.buf.length >= 2048) {
+      const pcm = new Int16Array(this.buf.length);
+      for (let k = 0; k < this.buf.length; k++) {
+        let s = Math.max(-1, Math.min(1, this.buf[k]));
+        pcm[k] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      this.buf = [];
+      this.port.postMessage(pcm.buffer, [pcm.buffer]);
     }
-    this.port.postMessage(pcm.buffer, [pcm.buffer]);
     return true;
   }
 }

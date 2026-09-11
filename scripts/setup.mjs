@@ -21,12 +21,12 @@ import { fileURLToPath } from "node:url";
 const ENV_PATH = fileURLToPath(new URL("../.env", import.meta.url));
 const ENV_TEMPLATE = fileURLToPath(new URL("../.env.example", import.meta.url));
 const LIVEAVATAR_API_BASE = "https://api.liveavatar.com";
-const OPENAI_API_BASE = "https://api.openai.com";
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 
 // Not prompted for — filled in silently when absent so the preflight
 // (scripts/check-env.mjs) passes, and listed in the closing reminders.
 // Mirrored from .env.example.
-const DEFAULT_GPT_LIVE_MODEL = "gpt-live-1";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-native-audio-latest";
 
 // The default avatar for a fresh setup. Also filled in only when absent —
 // an id already in .env is never overwritten.
@@ -167,42 +167,40 @@ async function main() {
     },
   });
 
-  // ── 2. OpenAI API key ──────────────────────────────────────────────────────
-  console.log(c.bold("\n2. OpenAI API key"));
-  info("create one at https://platform.openai.com/api-keys");
-  const openaiKey = await resolveVerifiedKey({
-    label: "OpenAI API key",
-    envName: "OPENAI_API_KEY",
-    current: env.OPENAI_API_KEY,
-    hint: "Create one at https://platform.openai.com/api-keys, then re-run `pnpm run setup`.",
+  // ── 2. Gemini API key ──────────────────────────────────────────────────────
+  console.log(c.bold("\n2. Gemini API key"));
+  info("create one at https://aistudio.google.com/");
+  const geminiKey = await resolveVerifiedKey({
+    label: "Gemini API key",
+    envName: "GEMINI_API_KEY",
+    current: env.GEMINI_API_KEY,
+    hint: "Create one at https://aistudio.google.com/, then re-run `pnpm run setup`.",
     verify: async (key) => {
       try {
-        const res = await fetch(`${OPENAI_API_BASE}/v1/models`, {
-          headers: { Authorization: `Bearer ${key}` },
-        });
+        const res = await fetch(`${GEMINI_API_BASE}/v1beta/models?key=${key}`);
         if (res.ok) return null;
-        return res.status === 401
-          ? "that key was rejected — check it at https://platform.openai.com/api-keys"
-          : `OpenAI API answered ${res.status} — try again in a moment`;
+        return res.status === 400 || res.status === 403
+          ? "that key was rejected — check it at https://aistudio.google.com/"
+          : `Gemini API answered ${res.status} — try again in a moment`;
       } catch (err) {
-        return `could not reach ${OPENAI_API_BASE} — ${err.message}`;
+        return `could not reach ${GEMINI_API_BASE} — ${err.message}`;
       }
     },
   });
 
   writeEnvFile({
     LIVEAVATAR_API_KEY: liveavatarKey,
-    OPENAI_API_KEY: openaiKey,
+    GEMINI_API_KEY: geminiKey,
     // Required by the server but never worth a prompt — the default works.
     // Only filled in when absent, so a hand-edited value survives re-runs.
-    ...(env.GPT_LIVE_MODEL ? {} : { GPT_LIVE_MODEL: DEFAULT_GPT_LIVE_MODEL }),
+    ...(env.GEMINI_MODEL ? {} : { GEMINI_MODEL: DEFAULT_GEMINI_MODEL }),
     ...(env.LIVEAVATAR_AVATAR_ID ? {} : { LIVEAVATAR_AVATAR_ID: DEFAULT_AVATAR_ID }),
   });
 
   console.log(`\n${c.green("Done.")} Wrote .env — that's everything required.`);
   console.log(`Run ${c.bold("pnpm dev")} and open http://localhost:5173\n`);
   console.log(c.bold("Next steps, try playing around with these"));
-  info(`GPT_LIVE_MODEL         ${env.GPT_LIVE_MODEL || DEFAULT_GPT_LIVE_MODEL} — swap in .env`);
+  info(`GEMINI_MODEL           ${env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL} — swap in .env`);
   info(
     `LIVEAVATAR_AVATAR_ID   ${env.LIVEAVATAR_AVATAR_ID || DEFAULT_AVATAR_ID} — swap in .env`,
   );

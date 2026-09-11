@@ -1,169 +1,206 @@
-# LiveAvatar × GPT-Live — language demo
+# LiveAvatar × Gemini Live — Realtime Voice Agent
 
-A minimal, readable reference integration: **OpenAI GPT-Live** (a full-duplex
-speech-to-speech model) driving a **HeyGen LiveAvatar** — a realtime voice
-agent with a face, whose tool calls land on screen as animated overlays.
+A **Google Gemini Live API** adaptation of HeyGen's LiveAvatar realtime voice agent reference demo.
 
-Out of the box it is a **Japanese tutor**: it teaches you words out loud,
-puts a term card (term · pronunciation · meaning) on screen as it says them,
-and every few words shrinks itself to the corner and reviews everything taught
-so far — a recap panel rendered from the server's own record of the session,
-not the model's memory. The persona is two markdown files (`server/prompts/`)
-and each visual is one tool plus one composition — swap those and it is any
-other demo.
+This project adapts the original [HeyGen LiveAvatar GPT-Live demo](https://github.com/heygen-com/liveavatar-gpt-live-demos) to use Google's **Gemini Live API** (`gemini-2.5-flash-native-audio-latest`) as the realtime speech-to-speech intelligence layer while preserving HeyGen's LiveAvatar and LiveKit streaming presentation layer.
 
-Barebones on purpose: the wiring is the thing you read, not a framework around
-it. Fork it, swap the persona, keep the face.
+> **Note:** This is an open-source, community-maintained adaptation based on HeyGen's reference implementation. It is not an official HeyGen or Google release.
+
+---
+
+## Overview
+
+The demo delivers an interactive, full-duplex conversational voice agent with an expressive visual persona: an AI **Japanese tutor ("Mariko")** that teaches basic vocabulary out loud, assesses learner pronunciation, and dynamically triggers visual **term cards** (word · reading · meaning) rendered over the video stream via HyperFrames.
+
+The original implementation relied on OpenAI's GPT-Live and Responses APIs. This repository completely replaces the intelligence layer with Google Gemini's bidirectional live audio streaming protocol (`bidiGenerateContent`), eliminating any dependency on OpenAI credentials or billing.
+
+---
+
+## Architecture
 
 ```
-                        ┌────────────────────────┐
-                 ws     │      orchestrator      │   ws    ┌──────────────┐
-   mic audio ──────────►│       (server/)        │◄───────►│   GPT-Live   │
-   transcripts ◄────────│                        │         │  + Responses │
-   tool calls  ◄────────│  audio ──► media server│         │  (tools)     │
-                        └───────────────┬────────┘         └──────────────┘
-  ┌─────────┐                           │ ws (LITE session)
-  │ browser │      LiveKit      ┌───────▼────────┐
-  │ (web/)  │◄─────────────────►│   LiveAvatar   │
-  └─────────┘  avatar A/V       └────────────────┘
+                       ┌────────────────────────┐
+                 ws    │   Local Orchestrator   │   WebSocket    ┌────────────────────────┐
+   mic audio ─────────►│     (Express/Node)     │◄──────────────►│    Google Gemini Live   │
+  transcripts ◄────────│       server/          │   PCM16 24kHz  │  (gemini-2.5-flash-    │
+   tool calls ◄────────│                        │   bidi stream  │   native-audio-latest) │
+                       │  audio ──► media server│                └────────────────────────┘
+                       └───────────────┬────────┘
+  ┌─────────┐                          │ ws (LITE session)
+  │ Browser │     LiveKit WebRTC       │ agent.speak (PCM16 24kHz)
+  │  (web/) │◄─────────────────────────▼────────┐
+  │         │◄────────────────►│   LiveAvatar   │
+  └─────────┘    avatar A/V    │  Media Server  │
+                               └────────────────┘
 ```
 
-The browser never holds an API key. It gets a LiveKit token to watch the
-avatar, and a websocket for mic audio (up) and transcripts + visuals (down).
-The avatar's voice takes the short path: GPT-Live → orchestrator → media
-server, with the browser out of the loop.
+### Key Architectural Characteristics
+
+1. **Server-Side Credential Isolation**:
+   - The browser client **never** holds Gemini API keys or LiveAvatar account secrets.
+   - The browser receives an ephemeral LiveKit room token to display the WebRTC video/audio stream, and a local WebSocket connection (`/ws/:id`) for mic streaming and UI overlay events.
+2. **Native Audio Compatibility (Zero-Transcoding)**:
+   - **Gemini Live** outputs raw **PCM 16-bit mono audio at 24,000 Hz** (`audio/pcm;rate=24000`).
+   - **HeyGen LiveAvatar LITE** media servers accept raw **24kHz PCM16** base64 audio frames in `agent.speak` packets.
+   - Audio passes directly from Gemini to HeyGen's media server with no resampling or transcoding overhead.
+3. **Optimized Client Audio Buffering**:
+   - The browser AudioWorklet (`web/src/micCapture.ts`) buffers downsampled microphone samples into ~85ms chunks (2,048 samples) before transmission, avoiding WebSocket frame flooding while maintaining low latency.
+4. **Tool / Function Calling**:
+   - Visual tools (`show_term_card`, `show_learned_words`, `hide_card`) are declared as native Gemini function declarations.
+   - When Gemini invokes a tool during conversation, the orchestrator dispatches `{ type: "ui", widget, props }` to the browser, rendering animated DOM overlays on top of the avatar's WebRTC stream.
+5. **Natural Barge-In & Interruption**:
+   - Gemini Live's native voice activity detection and interruption events (`serverContent.interrupted`) trigger downstream audio queue purges on the LiveAvatar media server, ensuring immediate and natural speech cutoffs when the user speaks.
+
+---
+
+## Main Features
+
+- 🎙️ **Full-Duplex Voice Conversation**: Realtime speech-to-speech with natural conversational timing and low latency.
+- ⚡ **Google Gemini Live API**: Powered by `gemini-2.5-flash-native-audio-latest` with native audio generation and expressiveness.
+- 👤 **HeyGen LiveAvatar**: Realistic interactive video avatar streamed over LiveKit WebRTC.
+- 🗂️ **Dynamic Visual Overlays**: Animated lesson term cards and recap panels triggered by tool calls and rendered via HyperFrames.
+- 📝 **Live Dual Transcription**: Simultaneous real-time transcription for both user speech and avatar speech.
+- 🛑 **Interruption / Barge-in**: Speak over the avatar at any time; the avatar immediately yields.
+- 🇯🇵 **Japanese Tutor Persona**: Configurable persona located in clean markdown files (`server/prompts/instructions.md` and `server/prompts/greeting.md`).
+
+---
+
+## Supported Tools
+
+| Tool Name | Parameters | Description |
+| --- | --- | --- |
+| `show_term_card` | `term`, `reading`, `meaning` | Displays an animated lower-third card reinforcing vocabulary in real time. |
+| `show_learned_words` | `title` | Triggers a full-screen recap panel reviewing vocabulary recorded during the session. |
+| `hide_card` | `reason` | Dismisses any active overlay card before its natural expiration. |
+
+---
 
 ## Quickstart
 
-Requirements: Node ≥ 20.12, pnpm, a [LiveAvatar API key](https://app.liveavatar.com),
-and an OpenAI API key with GPT-Live access (generally available; this
-integration speaks the v3 contract, `gpt-live-1`).
+### Prerequisites
+- **Node.js** ≥ 20.12
+- **pnpm** ≥ 9.0.0
+- **HeyGen LiveAvatar API Key**: From [app.liveavatar.com](https://app.liveavatar.com)
+- **Google Gemini API Key**: From [Google AI Studio](https://aistudio.google.com/)
+
+### Installation & Setup
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/mahdijnt/liveavatar-gemini-live-demo.git
+cd liveavatar-gemini-live-demo
+
+# 2. Install workspace dependencies
 pnpm install
-pnpm run setup   # prompts for the two API keys, verifies each, writes .env
-pnpm dev         # server on :8787, web on :5173
+
+# 3. Interactive environment setup (verifies keys against live APIs)
+pnpm run setup
+
+# 4. Start development server
+pnpm dev
 ```
 
-`pnpm run setup` walks you through it: it asks for each key (with the URL to
-create one), verifies it against the live API before accepting it, and writes
-`.env` at the repo root. Safe to re-run — existing values are kept and
-re-verified, not re-asked. (The `run` matters: bare `pnpm setup` is pnpm's own
-built-in command.)
+The application will be available at **http://localhost:5173**. Click **"Start talking"**, grant microphone access, and start your conversation with Mariko!
 
-Prefer doing it by hand? `cp .env.example .env` and fill it in. Either way,
-`pnpm dev` and `pnpm start` check the required variables before starting and
-name exactly what's missing.
+---
 
-No avatar to pick, no prompt to write: a default avatar id ships in
-`.env.example` (swap `LIVEAVATAR_AVATAR_ID` for one of your own, or unset it
-and the server uses the first public avatar and logs which), and the persona
-ships in `server/prompts/`.
+## Environment Variables
 
-Open http://localhost:5173 → **Start** → allow the mic → talk. The tutor
-greets you, teaches こんにちは, and the term card lands on screen while it
-keeps talking. Say the word back; ask it for another one.
+Configure `.env` at the repository root:
 
-To change what the demo is: edit `server/prompts/instructions.md` (who the
-avatar is) and `server/prompts/greeting.md` (how it opens), restart the
-server. An empty `greeting.md` means the user speaks first.
+```ini
+# Required: HeyGen LiveAvatar API Key
+LIVEAVATAR_API_KEY=your_liveavatar_api_key
 
-## Troubleshooting a fresh clone
+# Required: Google Gemini API Key
+GEMINI_API_KEY=your_gemini_api_key
 
-**"Missing required env: …" when you run `pnpm dev`.** The preflight check
-(`scripts/check-env.mjs`) refuses to start until the required variables are
-set, and names them. Run `pnpm run setup` — it prompts for each key and
-verifies it against the live API — or fill in `.env` by hand. The server also
-re-checks per session (`/api/session/start` 500s naming what's absent), so a
-deployment with broken ambient env explains itself too. The server reads
-`.env` only at startup.
+# Model & Voice Settings
+GEMINI_MODEL=gemini-2.5-flash-native-audio-latest
+GEMINI_VOICE=Aoede
 
-**A key that doesn't work.** `pnpm run setup` verifies both keys before saving
-them, so a typo or revoked key fails there with a pointer to the right
-dashboard — re-run it any time keys change.
+# Avatar Selection (Default avatar provided)
+LIVEAVATAR_AVATAR_ID=65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0
 
-**The avatar appears and blinks but never speaks.** LiveAvatar is up; GPT-Live
-isn't. Almost always a bad `OPENAI_API_KEY` or no GPT-Live access on the
-account. Set `GPT_LIVE_DEBUG=1` and restart to watch every upstream event
-(audio elided) — a session that authenticates but errors will say why.
-
-**Any other error on Start.** Upstream error bodies are passed through
-verbatim on purpose — a 401 from LiveAvatar or OpenAI means that key; read the
-message, it is the real one.
-
-**It speaks but never hears you.** The status line under the stage says
-`microphone unavailable` if permission was denied — re-allow it in the
-browser's site settings and Start again. There is no push-to-talk and no VAD:
-the mic streams continuously (meter next to the status line) and the model
-decides when you're done talking.
-
-**No greeting when the session opens.** An empty `server/prompts/greeting.md`
-is a feature, not a bug: it means "say nothing, let the user speak first".
-
-**Port 8787 is taken.** Set `PORT` in `.env` — and mirror it in
-`web/vite.config.ts`, whose dev proxy points at `:8787`. (Vite itself moving
-off 5173 is fine; the proxy target is the only coupling.)
-
-## What's in the box
-
-| Path | What it is |
-| --- | --- |
-| `shared/messages.ts` | The wire protocol — every message both sides speak, typed once |
-| `shared/tools.ts` | The tool registry — schemas the model sees, co-located with their arg types |
-| `server/prompts/*.md` | The persona — edit these to change what the demo is |
-| `server/src/prompts.ts` | Loads the persona; holds the delegation/tool mechanics prompts |
-| `server/src/gptlive.ts` | The GPT-Live v3 bridge: session start, audio, transcripts, tool calls |
-| `server/src/turns.ts` | Turn projection over v3 transcript deltas — the API has no turn events |
-| `server/src/mediaServer.ts` | The avatar's ear: LITE media-server websocket |
-| `server/src/session.ts` | Wires the legs together; owns barge-in |
-| `web/src/livekitRoom.ts` | Joins the room, attaches the avatar's video + audio |
-| `web/src/micCapture.ts` | AudioWorklet → 24kHz PCM16 base64 (no VAD — the model owns turn-taking) |
-| `web/src/overlays/` | The single switch over `widget`; one renderer per widget |
-| `web/public/overlays/term-card.html` | The overlay composition (a self-contained animated page) |
-
-Deeper docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (how and why),
-[`AGENTS.md`](AGENTS.md) (a map for coding agents, including the add-a-tool
-recipe).
-
-## How tool calls become visuals
-
-1. The live model holds **no tools**. When a visual is wanted it delegates the
-   turn to its backend Responses model — which does hold them
-   (`shared/tools.ts`).
-2. The Responses model answers in words **and** calls e.g. `show_term_card` in
-   the same reply. The words are injected back into the live session and
-   spoken; the tool call surfaces on the orchestrator's socket.
-3. The orchestrator validates the call (`server/src/tools.ts`) and forwards
-   one `{ type: "ui", widget, props }` message to the browser. Term cards are
-   also recorded per-session — `show_learned_words` renders the recap from
-   that server-side store, so the list is never the model's to get wrong.
-4. The browser's widget switch (`web/src/overlays/`) plays the matching
-   composition — a transparent animated page layered over the avatar's video.
-   Staging is per-widget: the term card overlays the full-frame avatar, the
-   recap panel shrinks it to the corner. Nothing is composited into the
-   stream itself.
-
-Adding a tool is three small edits — see [`AGENTS.md`](AGENTS.md).
-
-## Iterating on overlays
-
-Render a widget without burning session minutes — from the browser console:
-
-```js
-window.__ui({ widget: "term_card", props: { term: "こんにちは", reading: "kon-ni-chi-wa", meaning: "hello" } })
-window.__ui({ widget: "learned_words", props: { title: "Words so far", words: [{ term: "こんにちは", reading: "kon-ni-chi-wa", meaning: "hello" }, { term: "お茶", reading: "o-cha", meaning: "tea" }] } })
+# Optional Settings
+# GEMINI_DEBUG=1
+# PORT=8787
 ```
 
-## Production notes
+Available Gemini voices: `Aoede`, `Puck`, `Charon`, `Kore`, `Fenrir`.
 
-This is a starter, not a deployment. Before exposing it publicly: add auth on
-`/api/session/start` and the websocket upgrade, hide upstream error bodies,
-and read the hardening list in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#production-hardening).
+---
+
+## Project Structure
+
+```
+├── docs/
+│   ├── ARCHITECTURE.md          # In-depth architectural documentation
+│   └── GEMINI_MIGRATION.md      # Detailed GPT-Live to Gemini migration notes
+├── scripts/
+│   ├── check-env.mjs            # Startup environment variable validation
+│   └── setup.mjs                # Interactive API credential setup & verification
+├── server/                      # Node.js backend orchestrator
+│   ├── prompts/                 # Markdown persona definitions (instructions, greeting)
+│   └── src/
+│       ├── config.ts            # Environment and runtime configuration
+│       ├── geminilive.ts        # Gemini Live API bidirectional bridge (@google/genai)
+│       ├── mediaServer.ts       # HeyGen LiveAvatar LITE WebSocket client
+│       ├── session.ts           # Multi-leg session coordinator and barge-in logic
+│       ├── tools.ts             # Tool dispatcher and session state tracking
+│       └── turns.ts             # Streaming transcript and turn projector
+├── shared/                      # Shared types, tool schemas, and wire protocols
+│   ├── messages.ts              # WebSocket messages between server and browser
+│   └── tools.ts                 # JSON schemas for function calling
+└── web/                         # Vite + TypeScript browser client
+    ├── index.html               # Main UI markup
+    ├── public/overlays/         # HyperFrames overlay compositions (GSAP animated)
+    └── src/
+        ├── livekitRoom.ts       # LiveKit WebRTC client integration
+        ├── micCapture.ts        # AudioWorklet PCM downsampler (24kHz)
+        └── overlays/            # Overlay widget renderers
+```
+
+---
+
+## Development Commands
+
+```bash
+# Start both server and client with hot reloading
+pnpm dev
+
+# Typecheck all packages
+pnpm typecheck
+
+# Build client for production
+pnpm build
+
+# Start production server
+pnpm start
+```
+
+---
+
+## Troubleshooting
+
+- **`Missing required env: GEMINI_API_KEY`**: Run `pnpm run setup` to configure and verify your API keys, or ensure `.env` contains valid credentials.
+- **Microphone unavailable**: Ensure your browser has granted microphone access permissions for `http://localhost:5173`.
+- **Avatar connects but does not speak**: Ensure your `GEMINI_API_KEY` has access to the Gemini Live API. Enable `GEMINI_DEBUG=1` in `.env` to inspect upstream WebSocket frames.
+- **Port 8787 already in use**: Set `PORT=8788` in `.env` and update the proxy configuration in `web/vite.config.ts`.
+
+---
+
+## Attribution & Upstream Project
+
+This repository is derived from the official HeyGen reference integration:
+- **Original Repository**: [heygen-com/liveavatar-gpt-live-demos](https://github.com/heygen-com/liveavatar-gpt-live-demos)
+- **Original Author**: [HeyGen](https://heygen.com)
+- **Adapted By**: [mahdijnt](https://github.com/mahdijnt)
+
+---
 
 ## License
 
-MIT. One vendored exception: the bundled GSAP
-(`web/public/overlays/vendor/gsap.min.js`) stays under its own
-[GSAP Standard License](https://gsap.com/standard-license) — see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+This project is licensed under the [MIT License](LICENSE), matching the original repository.
+
+Vendored third-party libraries (such as GSAP in `web/public/overlays/vendor/gsap.min.js`) remain subject to their respective licenses (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

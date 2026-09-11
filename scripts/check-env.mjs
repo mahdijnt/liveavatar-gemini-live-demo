@@ -17,7 +17,7 @@ try {
   /* no .env — ambient env only */
 }
 
-const required = ["LIVEAVATAR_API_KEY", "OPENAI_API_KEY"];
+const required = ["LIVEAVATAR_API_KEY", "GEMINI_API_KEY"];
 const missing = required.filter((name) => !process.env[name]);
 
 if (missing.length) {

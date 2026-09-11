@@ -5,9 +5,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/heygen-com/liveavatar-language-demo.git"
+    "url": "https://github.com/mahdijnt/liveavatar-gemini-live-demo.git"
   },
-  "description": "Language-tutor reference integration: OpenAI GPT-Live driving a HeyGen LiveAvatar, with tool calls rendered as on-screen term cards.",
+  "description": "Language-tutor reference integration: Google Gemini Live API driving a HeyGen LiveAvatar, with tool calls rendered as on-screen term cards.",
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "dev": "node scripts/check-env.mjs && pnpm --parallel -r dev",

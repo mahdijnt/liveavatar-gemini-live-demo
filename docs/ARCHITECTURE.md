@@ -5,7 +5,7 @@ in comments; this is the map.
 
 ## The problem
 
-GPT-Live is **full-duplex**: one continuous audio stream each way, and the
+Gemini Live is **full-duplex**: one continuous audio stream each way, and the
 model manages turn-taking itself — it interrupts, barges in, yields, and emits
 partial transcripts as it speaks. LiveAvatar's session protocol is
 **turn-based** at heart (`speak` / `speak_end` / `interrupt`).
@@ -14,8 +14,8 @@ Instead of manufacturing turn boundaries to bridge them, this integration
 treats the avatar as a pure **audio → face renderer** fed one never-ending
 utterance:
 
-- every GPT-Live audio chunk is appended to the avatar's buffer as it arrives,
-  in order — v3 audio deltas carry no timeline, so arrival IS the timing;
+- every Gemini Live audio chunk is appended to the avatar's buffer as it arrives,
+  in order;
 - no per-turn `speak_end`, no per-turn interrupt. The model yields on its own;
   when it goes quiet the stream simply stops and the avatar idles.
 
@@ -25,20 +25,20 @@ utterance:
 browser ──► POST /api/session/start ──► LiveAvatar /v1/sessions/token + /start   (server-side)
 browser ◄── LiveKit room                                    (avatar audio + video)
 browser ◄─► /ws/{session_id}                     (mic up; turns + visuals down)
-server  ◄─► wss://api.openai.com/v1/live/sessions              (GPT-Live v3)
+server  ◄─► Google Gemini Live API WebSocket     (Gemini Live 2.5 native audio)
 server  ──► LITE media-server ws_url              (avatar's ear: audio buffer)
 ```
 
 A **LITE** session is the key: started bare (no agent config), it returns
 `livekit_url` + `livekit_client_token` (for the browser to watch) **and**
 `ws_url` — a direct websocket into the avatar's media server, which is what
-lets this server thread GPT-Live's audio in without the browser in the loop.
+lets this server thread Gemini Live's audio in without the browser in the loop.
 The protocol over it is public and small
 ([docs](https://docs.liveavatar.com/docs/lite-mode/events.md)): `agent.speak`
 (PCM16 24kHz base64 chunks), `agent.interrupt`, `session.keep_alive` — and one
 rule that matters: commands sent before the server reports
 `session.state_updated: "connected"` are silently dropped, which is why the
-GPT-Live leg is gated on that event (a lost greeting is the symptom).
+Gemini Live leg is gated on that event (a lost greeting is the symptom).
 
 The browser never holds a key or a session token. Avatar audio deliberately
 does not travel on the browser websocket — it reaches the browser over
